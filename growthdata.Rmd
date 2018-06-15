@@ -1,0 +1,278 @@
+---
+title: "Yeast Growth Data Analysis"
+author: "Jai Denton"
+date: "28/02/2018"
+output: 
+  html_document:
+    df_print: paged
+    code_folding: hide
+    theme: yeti
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(ggplot2)
+#colour Tests
+#c("#873100", "#D15342", "#BF72CC", "#6B90D6", "#008583")
+
+```
+\  
+
+Each dataset will be opened, processed and the data graphed. I will update this a little more but this is the first lot of growth data. I will also include a brief version of the M&M in here.   
+\  
+
+### Single Strain Growth Tests
+To provide supplemented growth data each of the strain will be grown on a varying concentration of the amino acid they cannot produce. Specfically ADE-fbr 
+will be supplemented with 0, 0.1, 1, 10, 100 lysine and LYS-fbr will be supplemented with 0, 0.1, 1, 10, 100 adenine.
+
+\  
+
+```{r}
+single_growth <- read.csv("S23-LYS_S24-ADE_growth.csv")
+single_growth
+```
+\
+**Variation**  
+As part of the single strain growth test, time point 0, before growth in supplemented media, is the plating of both strains, ADE-fbr & LYS-fbr, replciated five times. This allows for an 
+estimation of the technical variation. The data are presented as a standard boxplot (with whiskers extending to the lowest or highest value within 1.5 times the IQR from the hinge) and 
+a table with summary statistics. 
+```{r}
+growth_var <- single_growth
+growth_var <- subset(growth_var, growth_var$Time == 0) #subset the data to include only the 0 time point
+growth_var$Sample <- paste(growth_var$Strain, '-', growth_var$Replicate)
+
+#plot the replicates
+  plot1 <- ggplot(growth_var, aes(x=Sample, y = Cells)) +
+    geom_boxplot(position=position_dodge(width=1)) +
+    theme(legend.position="none", axis.title.x = element_text(size=13), axis.title.y = element_text(size=13))
+  plot1
+
+#summarise and display the data
+  variation_summary <- ddply(growth_var, c("Sample"), summarise, Growth_mean = mean(Cells, na.rm=TRUE),
+    Growth_sd = sd(Cells, na.rm=TRUE), Growth_median = median(Cells, na.rm = TRUE), Growth_iqr = IQR(Cells, na.rm=TRUE))
+  variation_summary
+```
+ 
+\  
+  
+**Growth Data of Mono-cultures**  
+The growth of single strains, with varying levels of the amino acid they are unable to synthesise, allows us to determine the amino acid requirements. This it turns allows an estimation
+of the mutalism benefit and growth parameters between strains.
+
+```{r}
+single_growth <- subset(single_growth, single_growth$Time == 24)
+single_growth$GPer <- with(single_growth, single_growth$Growth * 100)
+single_summary <- ddply(single_growth, c("Strain","Supp","Time"), summarise, Cells_mean = mean(Cells, na.rm=TRUE), Growth_mean = mean(Growth, na.rm=TRUE),  Percentage_mean = mean(GPer, na.rm=TRUE),
+               Growth_sd = sd(Growth, na.rm=TRUE), Growth_median = median(Growth, na.rm = TRUE), Growth_iqr = IQR(Growth, na.rm=TRUE))
+single_summary$Supp <- as.factor(single_summary$Supp)
+single_summary
+single_plot <- ggplot(single_summary, aes(x=Supp, y=Growth_mean, color=factor(Strain, labels=c("ADE-FBR(S23)", "LYS-FBR(S24)")))) + 
+    geom_point() + labs(y="Growth", x="Amino Acid Concentration (μg/ml)", color = "Strain")
+single_plot
+```
+\  
+
+\  
+
+```{r}
+temp_S23<-subset(single_summary, single_summary$Strain=='S23')
+temp_S24<-subset(single_summary, single_summary$Strain=='S24')
+
+temp_S23 <- temp_S23[,-c(6:9)]
+temp_S23 <- temp_S23[,-1]
+colnames(temp_S23) <- c('Supp','Time','S23_Cells','S23_Growth')
+temp_S23$S24_Cells <- temp_S24$Cells_mean
+temp_S23$S24_Growth <- temp_S24$Growth_mean
+temp_S23$Per_ADE_Cells <- temp_S23$S23_Cells / (temp_S23$S23_Cells + temp_S23$S24_Cells) * 100
+temp_S23$Per_ADE_Growth <- temp_S23$S23_Growth / (temp_S23$S23_Growth + temp_S23$S24_Growth) * 100
+temp_S23$Per_ADE_Growth[temp_S23$Per_ADE_Growth < 0 ] <- 0 #zero the negtive growth value
+
+
+PER_plot1 <- ggplot(temp_S23, aes(x=Supp, y=Per_ADE_Growth)) + 
+    geom_point() + scale_y_continuous(limits = c(0, 100))
+
+PER_plot1
+PER_plot2 <- ggplot(temp_S23, aes(x=Supp, y=Per_ADE_Cells)) + 
+    geom_point() + scale_y_continuous(limits = c(0, 100))
+
+PER_plot2
+
+```
+
+\ 
+\  
+
+### Mutalism Growth Tests
+
+**No Adenine **  
+This is the dataset for the unsupplemented growth tests. This table is the raw data prior to processing.
+```{r}
+no_ade <- read.csv("S23-S24_ratios_no_ade.csv")
+no_ade
+```
+\    
+Once opened, the means, standard deviations & IQR are calculated for both cell count calculations and the ratios between the two strains. 
+```{r}
+no_ade <- ddply(no_ade, c("Ratio","Time"), summarise, cell_mean = mean(Cells, na.rm=TRUE), 
+               cell_sd = sd(Cells, na.rm=TRUE), cell_median = median(Cells, na.rm = TRUE), cell_iqr = IQR(Cells, na.rm=TRUE), ratio_mean = mean(ADE, na.rm=TRUE), 
+               ratio_sd = sd(ADE, na.rm=TRUE), ratio_median = median(ADE, na.rm = TRUE), ratio_iqr = IQR(ADE, na.rm=TRUE))
+no_ade$Ratio <- as.factor(no_ade$Ratio)
+#no_ade$Time <- as.factor(no_ade$Time)
+no_ade
+write.csv(no_ade, file="no_ade_summary.csv")
+```
+
+```{r}
+no_ade_plot_cells <- ggplot(no_ade, aes(x=Time, y = cell_mean, color=Ratio)) +
+  ylab("Cells per ml") + labs(color="Initial Ratio (Volume)") + xlab("Time (hours)") + ggtitle("Growth in amino acid free media") +
+  geom_errorbar(size=0.5, width=3, aes(ymin=cell_mean - cell_sd, ymax=cell_mean + cell_sd)) + theme(panel.border=element_rect(colour = "black", fill=NA, size=1)) +
+  geom_point(size=2) + geom_smooth(size=0.3, se = FALSE) + scale_color_manual(values=c("#752000", "#FF4500", "#CF0081", "#6F00FF", "#3F008C")) +
+  scale_x_continuous(breaks=c(0,24,48,72,96,120,144))
+no_ade_plot_cells
+ggsave("no_ade_cells.png", plot=no_ade_plot_cells)
+
+no_ade_plot_ratio <- ggplot(no_ade, aes(x=Time, y = ratio_mean, color=Ratio)) +
+  ylab("ADE-fbr Ratio (Cells)") +
+  xlab("Time (hours)") + ggtitle("Ratio of ADE-fbr to LYS-fbr in amino acid free media") +
+  labs(color="Initial Ratio (Volume)") + theme(panel.border=element_rect(colour = "black", fill=NA, size=1)) +
+  geom_errorbar(size=0.5, width=3, aes(ymin=ratio_mean - ratio_sd, ymax=ratio_mean + ratio_sd)) +
+  geom_point(size=2) + geom_smooth(se = FALSE, size=0.3) +
+  scale_y_continuous(limits = c(0, 100)) + scale_x_continuous(breaks=c(0,24,48,72,96,120,144)) + scale_color_manual(values=c("#752000", "#FF4500", "#CF0081", "#6F00FF", "#3F008C"))  
+ 
+
+no_ade_plot_ratio
+ggsave("no_ade_ratios.png", plot=no_ade_plot_ratio)
+```
+\    
+
+\    
+**Supplementation**   
+The media was supplemented with the amount of adenine stated. This allows the LYS-fbr strain to grow without the need for the ADE-fbr strain.
+\  
+\  
+
+**One Percent Adenine**   
+This is the dataset for the growth tests supplementted with 10 percent (1μg/ml) adenine. This table is the raw data prior to processing. 
+
+```{r echo=FALSE}
+oneper_ade <- read.csv("S23-S24_ratios_1per_ade.csv")
+oneper_ade
+```
+\    
+Once opened, the means, standard deviations & IQR are calculated for both cell count calculations and the ratios between the two strains. 
+```{r}
+oneper_ade <- ddply(oneper_ade, c("Ratio","Time"), summarise, cell_mean = mean(Cells, na.rm=TRUE), 
+               cell_sd = sd(Cells, na.rm=TRUE), cell_median = median(Cells, na.rm = TRUE), cell_iqr = IQR(Cells, na.rm=TRUE), ratio_mean = mean(ADE, na.rm=TRUE), 
+               ratio_sd = sd(ADE, na.rm=TRUE), ratio_median = median(ADE, na.rm = TRUE), ratio_iqr = IQR(ADE, na.rm=TRUE))
+oneper_ade$Ratio <- as.factor(oneper_ade$Ratio)
+oneper_ade
+oneper_ade_mean <- ddply(oneper_ade, c("Time"), summarise, ratio_mean = mean(ratio_mean, na.rm=TRUE))
+write.csv(oneper_ade, file="0_1mg_ade_summary.csv")
+```
+
+```{r}
+oneper_ade_plot_cells <- ggplot(oneper_ade, aes(x=Time, y = cell_mean, color=Ratio)) +
+  ylab("Cells per ml") + labs(color="Initial Ratio (Volume)") + xlab("Time (hours)") + ggtitle("Growth in media supplemented with 0.1μg/ml of adenine") +
+  geom_errorbar(size=0.5, width=3, aes(ymin=cell_mean - cell_sd, ymax=cell_mean + cell_sd)) + theme(panel.border=element_rect(colour = "black", fill=NA, size=1)) +
+  geom_point(size=2) + scale_color_manual(values=c("#752000", "#FF4500", "#CF0081", "#6F00FF", "#3F008C")) +
+  scale_x_continuous(breaks=c(0,24,48,72,96,120,144))
+oneper_ade_plot_cells
+ggsave("oneper_ade_cells.png", plot=oneper_ade_plot_cells)
+
+
+ggplot(oneper_ade, aes(x=Time, y = ratio_mean, color=Ratio)) +
+  ylab("% ADE-fbr Strain") +
+  xlab("Time (hours)") + ggtitle("Ratio of ADE-fbr to LYS-fbr in media supplemented with 0.1μg/ml of adenine") +
+  labs(color="ADE Start %") +
+  geom_errorbar(aes(ymin=ratio_mean - ratio_sd, ymax=ratio_mean + ratio_sd), size=.3, width=.3, position=position_dodge(width=0.4)) +
+  geom_point(position=position_dodge(width=0.4))  + scale_y_continuous(limits = c(0, 100)) + scale_color_manual(values=c("#752000", "#FF4500", "#CF0081", "#6F00FF", "#3F008C"))
+
+```
+\  
+
+**Ten Percent Adenine**   
+This is the dataset for the growth tests supplementted with 10 percent (1μg/ml) adenine. This table is the raw data prior to processing. 
+
+```{r echo=FALSE}
+tenper_ade <- read.csv("S23-S24_ratios_10per_ade.csv")
+tenper_ade
+```
+\    
+Once opened, the means, standard deviations & IQR are calculated for both cell count calculations and the ratios between the two strains. 
+```{r}
+tenper_ade <- ddply(tenper_ade, c("Ratio","Time"), summarise, cell_mean = mean(Cells, na.rm=TRUE), 
+               cell_sd = sd(Cells, na.rm=TRUE), cell_median = median(Cells, na.rm = TRUE), cell_iqr = IQR(Cells, na.rm=TRUE), ratio_mean = mean(ADE, na.rm=TRUE), 
+               ratio_sd = sd(ADE, na.rm=TRUE), ratio_median = median(ADE, na.rm = TRUE), ratio_iqr = IQR(ADE, na.rm=TRUE))
+tenper_ade$Ratio <- as.factor(tenper_ade$Ratio)
+tenper_ade
+tenper_ade_mean <- ddply(tenper_ade, c("Time"), summarise, ratio_mean = mean(ratio_mean, na.rm=TRUE))
+write.csv(tenper_ade, file="1mg_ade_summary.csv")
+```
+
+```{r}
+tenper_ade_plot_cells <- ggplot(tenper_ade, aes(x=Time, y = cell_mean, color=Ratio)) +
+  ylab("Cells per ml") + labs(color="Initial Ratio (Volume)") + xlab("Time (hours)") + ggtitle("Growth in media supplemented with 1μg/ml of adenine") +
+  geom_errorbar(size=0.5, width=3, aes(ymin=cell_mean - cell_sd, ymax=cell_mean + cell_sd)) + theme(panel.border=element_rect(colour = "black", fill=NA, size=1)) +
+  geom_point(size=2) + scale_color_manual(values=c("#752000", "#FF4500", "#CF0081", "#6F00FF", "#3F008C")) +
+  scale_x_continuous(breaks=c(0,24,48,72,96,120,144))
+tenper_ade_plot_cells
+ggsave("tenper_ade_cells.png", plot=tenper_ade_plot_cells)
+
+
+
+ggplot(tenper_ade, aes(x=Time, y = ratio_mean, color=Ratio)) +
+  ylab("% ADE-fbr Strain") +
+  xlab("Time (hours)") + ggtitle("Ratio of ADE-fbr to LYS-fbr in media supplemented with 1μg/ml of adenine") +
+  labs(color="ADE Start %") +
+  geom_errorbar(aes(ymin=ratio_mean - ratio_sd, ymax=ratio_mean + ratio_sd), size=.3, width=.3, position=position_dodge(width=0.4)) +
+  geom_point(position=position_dodge(width=0.4)) + scale_color_manual(values=c("#752000", "#FF4500", "#CF0081", "#6F00FF", "#3F008C")) + scale_y_continuous(limits = c(0, 100))
+
+```
+\  
+
+\  
+
+
+**One Hundred Percent Adenine**   
+This is the dataset for the growth tests supplementted with 100 percent (10μg/ml) adenine. This table is the raw data prior to processing. 
+
+```{r echo=FALSE}
+max_ade <- read.csv("S23-S24_ratios_100per_ade.csv")
+max_ade
+```
+\    
+Once opened, the means, standard deviations & IQR are calculated for both cell count calculations and the ratios between the two strains. 
+```{r}
+max_ade <- ddply(max_ade, c("Ratio","Time"), summarise, cell_mean = mean(Cells, na.rm=TRUE), 
+               cell_sd = sd(Cells, na.rm=TRUE), cell_median = median(Cells, na.rm = TRUE), cell_iqr = IQR(Cells, na.rm=TRUE), ratio_mean = mean(ADE, na.rm=TRUE), 
+               ratio_sd = sd(ADE, na.rm=TRUE), ratio_median = median(ADE, na.rm = TRUE), ratio_iqr = IQR(ADE, na.rm=TRUE))
+max_ade$Ratio <- as.factor(max_ade$Ratio)
+max_ade
+max_ade_mean <- ddply(max_ade, c("Time"), summarise, ratio_mean = mean(ratio_mean, na.rm=TRUE))
+write.csv(max_ade, file="10mg_ade_summary.csv")
+```
+
+```{r}
+max_ade_plot_cells <- ggplot(max_ade, aes(x=Time, y = cell_mean, color=Ratio)) +
+  ylab("Cells per ml") + labs(color="Initial Ratio (Volume)") + xlab("Time (hours)") + ggtitle("Growth in media supplemented with 10μg/ml of adenine") +
+  geom_errorbar(size=0.5, width=3, aes(ymin=cell_mean - cell_sd, ymax=cell_mean + cell_sd)) + theme(panel.border=element_rect(colour = "black", fill=NA, size=1)) +
+  geom_point(size=2) + scale_color_manual(values=c("#752000", "#FF4500", "#CF0081", "#6F00FF", "#3F008C")) +
+  scale_x_continuous(breaks=c(0,24,48,72,96,120,144))
+max_ade_plot_cells
+ggsave("max_ade_cells.png", plot=max_ade_plot_cells)
+
+
+ggplot(max_ade, aes(x=Time, y = ratio_mean, color=Ratio)) +
+  ylab("% ADE-fbr Strain") +
+  xlab("Time (hours)") + ggtitle("Ratio of ADE-fbr to LYS-fbr in media supplemented with 10μg/ml of adenine") +
+  labs(color="ADE Start %") +
+  geom_errorbar(aes(ymin=ratio_mean - ratio_sd, ymax=ratio_mean + ratio_sd), size=.3, width=.3, position=position_dodge(width=0.4)) +
+  geom_point(position=position_dodge(width=0.4)) + scale_color_manual(values=c("#752000", "#FF4500", "#CF0081", "#6F00FF", "#3F008C")) + scale_y_continuous(limits = c(0, 100))
+
+```
+
+\    
+
+\ 
